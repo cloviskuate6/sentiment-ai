@@ -45,7 +45,7 @@ pipeline {
             }
             post {
                 failure {
-                    echo("Tests echoues ou coverage insuffisant (< 70%)")
+                    echo("Tests echoues ou coverage insuffisant")
                 }
             }
         }
@@ -74,10 +74,10 @@ pipeline {
             sh 'docker compose down -v 2>/dev/null || true'
         }
         success {
-            echo("Pipeline reussi ! Image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}")
+            echo("Pipeline reussi")
         }
         failure {
-            echo("Pipeline echoue. Consultez les logs ci-dessus.")
+            echo("Pipeline echoue")
         }
     }
 }
