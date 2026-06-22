@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+  sentiment-ai:
+    build: .
+    container_name: sentiment-staging
+    ports:
+      - "8085:8085"  # L'hôte écoute sur 8085 et redirige vers le conteneur sur 8085
+    environment:
+      - ENV=development
+    networks:
+      - cicd-network
+    restart: unless-stopped
+    healthcheck:
+      # Le curl teste désormais le port 8085 à l'intérieur du conteneur
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 30s      # fréquence des vérifications
+      timeout: 10s       # délai max avant échec
+      retries: 3         # nombre d'échecs avant "unhealthy"
+      start_period: 10s  # délai de grâce au démarrage
+
+# Réseau dédié au même niveau que "services" et "version"
+networks:
+  cicd-network:
+    driver: bridge
