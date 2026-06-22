@@ -9,6 +9,7 @@ pipeline {
     }
 
     stages {
+        // Stage 1: Récupération du code
         stage('Checkout') {
             steps {
                 checkout scm
@@ -18,6 +19,7 @@ pipeline {
             }
         }
 
+        // Stage 2: Analyse statique du code (Fail Fast)
         stage('Lint') {
             steps {
                 sh '''
@@ -30,6 +32,7 @@ pipeline {
             }
         }
 
+        // Stage 3: Construction et Tests Unitaires (Quality Gate)
         stage('Build & Test') {
             steps {
                 sh "docker build -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ."
@@ -50,6 +53,7 @@ pipeline {
             }
         }
 
+        // Stage 4: Publication de l'image (Uniquement sur la branche main)
         stage('Push') {
             when {
                 branch 'main'
@@ -60,15 +64,18 @@ pipeline {
                     usernameVariable: 'REGISTRY_USER',
                     passwordVariable: 'REGISTRY_PASS'
                 )]) {
-                    sh "echo \$REGISTRY_PASS | docker login ghcr.io -u \$REGISTRY_USER --password-stdin"
-                    sh "docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-                    sh "docker tag ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:latest"
-                    sh "docker push ${REGISTRY}/${IMAGE_NAME}:latest"
+                    sh """
+                    echo "${REGISTRY_PASS}" | docker login ghcr.io -u "${REGISTRY_USER}" --password-stdin
+                    docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker tag ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:latest
+                    docker push ${REGISTRY}/${IMAGE_NAME}:latest
+                    """
                 }
             }
         }
     }
 
+    // Actions globales à la fin du pipeline
     post {
         always {
             sh 'docker compose down -v 2>/dev/null || true'
