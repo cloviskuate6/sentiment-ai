@@ -27,11 +27,15 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                // Version moderne avec guillemets doubles
-                sh "docker compose up -d --build"
-                // Attendre que le conteneur soit prêt et tester le healthcheck
+                // 1. Build de l'image via Docker classique (évite l'erreur d'interprétation compose)
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                
+                // 2. Lancement sur le port 8085 (libre) vers le port d'écoute de votre app (8000 ou 8081)
+                sh "docker run -d --name sentiment-ai-container -p 8085:8000 ${IMAGE_NAME}:${IMAGE_TAG} || docker run -d --name sentiment-ai-container -p 8085:8081 ${IMAGE_NAME}:${IMAGE_TAG}"
+                
+                // 3. Attente et vérification du Healthcheck sur le port 8085
                 sh "sleep 5"
-                sh "curl -f http://localhost:8080/health || curl -f http://localhost:8081/health"
+                sh "curl -f http://localhost:8085/health"
             }
         }
 
@@ -48,8 +52,8 @@ pipeline {
 
     post {
         always {
-            // Nettoyage avec la bonne commande officielle
-            sh "docker compose down -v"
+            // Nettoyage impératif du conteneur créé manuellement pour le test
+            sh "docker rm -f sentiment-ai-container || true"
         }
         success {
             echo 'Pipeline réussi avec succès !'
