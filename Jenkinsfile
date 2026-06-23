@@ -64,12 +64,15 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube
+        // Stage 4: Analyse Statique avec SonarQube (Correction Couverture & Chemins)
         stage('SonarQube Analysis') {
             environment {
                 SONAR_AUTH_TOKEN = credentials('sonar-token')
             }
             steps {
+                // Correction des chemins internes du XML (/app/src -> src) pour que SonarQube trouve les fichiers
+                sh "sed -i 's|/app/src|src|g' ./coverage.xml || true"
+                
                 sh """
                     docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
                     sonarsource/sonar-scanner-cli:latest \
@@ -81,7 +84,7 @@ pipeline {
                     -Dsonar.projectBaseDir="\$WORKSPACE" \
                     -Dsonar.sources=src \
                     -Dsonar.python.version=3.11 \
-                    -Dsonar.python.coverage.reportPaths=coverage.xml \
+                    -Dsonar.python.coverage.reportPaths="coverage.xml" \
                     -Dsonar.sourceEncoding=UTF-8 \
                     -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
                 """
