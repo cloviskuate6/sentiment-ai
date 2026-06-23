@@ -67,31 +67,23 @@ pipeline {
                 REG_TOKEN = credentials('sonar-token')
             }
             steps {
-                script {
-                    def sonarInsts = jenkins.model.Jenkins.instance
-                        .getDescriptorByType(hudson.plugins.sonar.SonarGlobalConfiguration.class)
-                        .installations
-                    // ✅ Fallback corrigé : 'sonarqube' correspond au nom dans Jenkins UI
-                    def sonarName = (sonarInsts && sonarInsts.length > 0) ? sonarInsts[0].name : 'sonarqube'
-                    echo "Installation SonarQube détectée : ${sonarName}"
-                    
-                    withSonarQubeEnv(sonarName) {
-                        sh """
-                            docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
-                            -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
-                            -e SONAR_TOKEN="\$REG_TOKEN" \
-                            sonarsource/sonar-scanner-cli:latest \
-                            sonar-scanner \
-                            -Dsonar.projectKey=sentiment-ai \
-                            -Dsonar.projectName=SentimentAI \
-                            -Dsonar.projectBaseDir="\$WORKSPACE" \
-                            -Dsonar.sources=src \
-                            -Dsonar.python.version=3.11 \
-                            -Dsonar.python.coverage.reportPaths=coverage.xml \
-                            -Dsonar.sourceEncoding=UTF-8 \
-                            -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
-                        """
-                    }
+                // Utilisation du nom exact 'sonarqube' validé par vos écrans de configuration
+                withSonarQubeEnv('sonarqube') {
+                    sh """
+                        docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
+                        -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
+                        -e SONAR_TOKEN="\$REG_TOKEN" \
+                        sonarsource/sonar-scanner-cli:latest \
+                        sonar-scanner \
+                        -Dsonar.projectKey=sentiment-ai \
+                        -Dsonar.projectName=SentimentAI \
+                        -Dsonar.projectBaseDir="\$WORKSPACE" \
+                        -Dsonar.sources=src \
+                        -Dsonar.python.version=3.11 \
+                        -Dsonar.python.coverage.reportPaths=coverage.xml \
+                        -Dsonar.sourceEncoding=UTF-8 \
+                        -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
+                    """
                 }
             }
         }
@@ -105,7 +97,7 @@ pipeline {
             }
         }
 
-        // Stage 6: Scan de sécurité avec Trivy
+        // Stage 6: Scan de sécurité des vulnérabilités avec Trivy
         stage('Security Scan') {
             steps {
                 sh """
