@@ -98,8 +98,6 @@ pipeline {
                             returnStdout: true
                         ).trim()
 
-                        echo "Réponse SonarQube : ${response}"
-
                         status = sh(
                             script: """
                                 echo '${response}' | python3 -c \\
@@ -107,8 +105,6 @@ pipeline {
                             """,
                             returnStdout: true
                         ).trim()
-
-                        echo "Statut Quality Gate : ${status}"
                     }
 
                     if (status != 'SUCCESS') {
@@ -147,8 +143,16 @@ pipeline {
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {
-                sh "docker rm -f sentiment-ai-staging || true"
-                sh "docker run -d --name sentiment-ai-staging -p 8001:8000 ${IMAGE_NAME}:${IMAGE_TAG}"
+                echo "Déploiement de ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} en staging..."
+                sh '''
+                    # Arrêter le staging précédent proprement
+                    docker compose -f docker-compose.yml -p staging down 2>/dev/null || true
+                    
+                    # Démarrer la nouvelle version
+                    docker compose -f docker-compose.yml -p staging up -d
+                    
+                    echo "Staging disponible sur http://localhost:8001"
+                '''
             }
         }
     }
