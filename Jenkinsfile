@@ -64,15 +64,13 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube (Correction Couverture & Chemins)
+        // Stage 4: Analyse Statique avec SonarQube
         stage('SonarQube Analysis') {
             environment {
                 SONAR_AUTH_TOKEN = credentials('sonar-token')
             }
             steps {
-                // Correction des chemins internes du XML (/app/src -> src) pour que SonarQube trouve les fichiers
                 sh "sed -i 's|/app/src|src|g' ./coverage.xml || true"
-                
                 sh """
                     docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
                     sonarsource/sonar-scanner-cli:latest \
@@ -99,7 +97,7 @@ pipeline {
             }
         }
 
-        // Stage 6: Scan de sécurité des vulnérabilités avec Trivy
+        // Stage 6: Scan de sécurité opérationnel des vulnérabilités (Trivy - Strict)
         stage('Security Scan') {
             steps {
                 sh """
@@ -108,10 +106,16 @@ pipeline {
                     -v trivy-cache:/root/.cache/trivy \
                     aquasec/trivy:latest image \
                     --severity HIGH,CRITICAL \
-                    --exit-code 0 \
+                    --exit-code 1 \
                     --format table \
                     "${IMAGE_NAME}:${IMAGE_TAG}"
                 """
+            }
+            post {
+                failure {
+                    echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
+                    echo 'Corrigez les dépendances avant de déployer.'
+                }
             }
         }
 
