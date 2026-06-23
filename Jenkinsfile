@@ -18,46 +18,34 @@ pipeline {
 
         stage('Lint') {
             steps {
-                sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100 || true"'
+                // Rendu bloquant (suppression du || true)
+                sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"'
             }
         }
 
         stage('Build & Test') {
             steps {
-                // 1. Nettoyage préventif
                 sh 'docker rm -f test-runner 2>/dev/null || true'
-                
-                // 2. Build de l'image
                 sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 
-                // 3. Exécution avec montage de volume pour récupérer le rapport sans 'docker cp'
                 sh """
                     set +e
-                    docker run \
-                    --rm \
+                    docker run --rm \
                     -v "${WORKSPACE}:/app/workspace" \
                     -e CI=true \
-                    --memory="2g" \
-                    --memory-swap="3g" \
+                    --memory="2g" --memory-swap="3g" \
                     --name test-runner \
                     ${IMAGE_NAME}:${IMAGE_TAG} \
-                    pytest tests/ \
-                    --cov=src \
-                    --cov-report=xml:/app/workspace/coverage.xml \
-                    --cov-fail-under=70
+                    pytest tests/ --cov=src --cov-report=xml:/app/workspace/coverage.xml --cov-fail-under=70
                     echo \$? > test_exit_code.txt
                     set -e
                 """
                 
                 script {
-                    def exitCode = readFile('test_exit_code.txt').trim()
-                    if (exitCode != '0') {
-                        error "Les tests ont échoué ou la couverture est inférieure à 70% (Code: ${exitCode})"
+                    if (readFile('test_exit_code.txt').trim() != '0') {
+                        error "Tests échoués ou couverture < 70%."
                     }
                 }
-            }
-            post {
-                failure { echo 'Tests échoués ou coverage insuffisant (< 70%)' }
             }
         }
 
@@ -71,21 +59,27 @@ pipeline {
                     -Dsonar.host.url="http://sonarqube:9000" \
                     -Dsonar.login="\$SONAR_AUTH_TOKEN" \
                     -Dsonar.projectKey=sentiment-ai \
-                    -Dsonar.projectName=SentimentAI \
-                    -Dsonar.projectBaseDir="\$WORKSPACE" \
                     -Dsonar.sources=src \
-                    -Dsonar.python.version=3.11 \
                     -Dsonar.python.coverage.reportPaths="coverage.xml" \
-                    -Dsonar.sourceEncoding=UTF-8 \
                     -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
                 """
             }
         }
 
         stage('Quality Gate') {
+            environment { SONAR_AUTH_TOKEN = credentials('sonar-token') }
             steps {
-                echo "Envoi des données à SonarQube terminé."
-                sleep 10
+                script {
+                    sleep 10
+                    def taskId = sh(script: "grep 'ceTaskId=' \$WORKSPACE/report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
+                    def status = ''
+                    def retries = 10
+                    while (retries-- > 0 && status != 'SUCCESS' && status != 'FAILED') {
+                        sleep 5
+                        status = sh(script: "curl -s -u \$SONAR_AUTH_TOKEN: http://sonarqube:9000/api/ce/task?id=${taskId} | python3 -c \"import sys,json; print(json.load(sys.stdin)['task']['status'])\"", returnStdout: true).trim()
+                    }
+                    if (status != 'SUCCESS') error "Quality Gate SonarQube échoué : ${status}"
+                }
             }
         }
 
@@ -95,9 +89,11 @@ pipeline {
                     docker run --rm \
                     -v /var/run/docker.sock:/var/run/docker.sock \
                     -v trivy-cache:/root/.cache/trivy \
+                    -v ${WORKSPACE}/.trivyignore:/.trivyignore \
                     aquasec/trivy:latest image \
                     --severity HIGH,CRITICAL \
                     --exit-code 1 \
+                    --ignorefile /.trivyignore \
                     --format table \
                     "${IMAGE_NAME}:${IMAGE_TAG}"
                 """
@@ -116,14 +112,17 @@ pipeline {
             when { branch 'main' }
             steps {
                 sh "docker rm -f sentiment-ai-staging || true"
-                sh "docker run -d --name sentiment-ai-staging -p 8001:8000 ${IMAGE_NAME}:${IMAGE_TAG} || docker run -d --name sentiment-ai-staging -p 8001:8081 ${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "docker run -d --name sentiment-ai-staging -p 8001:8085 ${IMAGE_NAME}:${IMAGE_TAG}"
             }
         }
     }
 
     post {
         always { sh "rm -f test_exit_code.txt || true" }
-        success { echo 'Pipeline complet réussi avec succès !' }
-        failure { echo 'Le pipeline a échoué.' }
+        success { echo 'Pipeline terminé avec succès !' }
+        failure { 
+            echo 'Le pipeline a échoué. Vérifiez les logs.'
+            // mail to: 'dev@example.com', subject: "Echec CI ${env.JOB_NAME}", body: "Build #${env.BUILD_NUMBER} a échoué."
+        }
     }
 }
