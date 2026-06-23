@@ -26,16 +26,22 @@ pipeline {
             }
         }
 
-        // Stage 3: Build & Test avec génération de couverture de code
+        // Stage 3: Build & Test avec génération de couverture de code (Optimisé Mémoire)
         stage('Build & Test') {
             steps {
                 sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 
+                // Nettoyage préventif des caches et conteneurs orphelins pour libérer de la RAM
+                sh 'docker system prune -f || true'
+                
                 sh """
                     set +e
+                    # Ajout des limites de mémoire pour empêcher l'arrêt brutal (Code 137)
                     docker run \
                     -e CI=true \
+                    --memory="1g" \
+                    --memory-swap="2g" \
                     --name test-runner \
                     ${IMAGE_NAME}:${IMAGE_TAG} \
                     pytest tests/ \
