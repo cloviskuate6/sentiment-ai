@@ -36,12 +36,12 @@ pipeline {
 
                 sh """
                     set +e
-                    docker run --rm \
-                    -v "${WORKSPACE}:/app/workspace" \
-                    -e CI=true \
-                    --memory="2g" --memory-swap="3g" \
-                    --name test-runner \
-                    ${IMAGE_NAME}:${IMAGE_TAG} \
+                    docker run --rm \\
+                    -v "${WORKSPACE}:/app/workspace" \\
+                    -e CI=true \\
+                    --memory="2g" --memory-swap="3g" \\
+                    --name test-runner \\
+                    ${IMAGE_NAME}:${IMAGE_TAG} \\
                     pytest tests/ --cov=src --cov-report=xml:/app/workspace/coverage.xml --cov-fail-under=70
                     echo \$? > test_exit_code.txt
                     set -e
@@ -60,13 +60,14 @@ pipeline {
             steps {
                 sh "sed -i 's|/app/src|src|g' ./coverage.xml || true"
                 sh """
-                    docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
-                    sonarsource/sonar-scanner-cli:latest sonar-scanner \
-                    -Dsonar.host.url="http://sonarqube:9000" \
-                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \
-                    -Dsonar.projectKey=sentiment-ai \
-                    -Dsonar.sources=src \
-                    -Dsonar.python.coverage.reportPaths="coverage.xml" \
+                    docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \\
+                    sonarsource/sonar-scanner-cli:latest sonar-scanner \\
+                    -Dsonar.host.url="http://sonarqube:9000" \\
+                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \\
+                    -Dsonar.projectKey=sentiment-ai \\
+                    -Dsonar.sources=src \\
+                    -Dsonar.python.version=3.11 \\
+                    -Dsonar.python.coverage.reportPaths="coverage.xml" \\
                     -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
                 """
             }
@@ -78,24 +79,41 @@ pipeline {
                 script {
                     sleep 10
                     def taskId = sh(
-                        script: "grep 'ceTaskId=' \$WORKSPACE/report-task.txt | cut -d'=' -f2",
+                        script: "grep 'ceTaskId=' ${WORKSPACE}/report-task.txt | cut -d'=' -f2",
                         returnStdout: true
                     ).trim()
 
-                    def status = ''
-                    def retries = 10
-                    while (retries-- > 0 && status != 'SUCCESS' && status != 'FAILED') {
+                    echo "Task ID SonarQube : ${taskId}"
+
+                    def status = 'PENDING'
+                    def retries = 15
+                    while (retries-- > 0 && status != 'SUCCESS' && status != 'FAILED' && status != 'ERROR') {
                         sleep 5
-                        status = sh(
+                        def response = sh(
                             script: """
-                                curl -s -H "Authorization: Bearer \$SONAR_AUTH_TOKEN" \
-                                http://sonarqube:9000/api/ce/task?id=${taskId} \
-                                | python3 -c "import sys,json; print(json.load(sys.stdin)['task']['status'])"
+                                curl -sf \\
+                                --user "\${SONAR_AUTH_TOKEN}:" \\
+                                "http://sonarqube:9000/api/ce/task?id=${taskId}" || echo '{}'
                             """,
                             returnStdout: true
                         ).trim()
+
+                        echo "Réponse SonarQube : ${response}"
+
+                        status = sh(
+                            script: """
+                                echo '${response}' | python3 -c \\
+                                "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('status','PENDING'))"
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Statut Quality Gate : ${status}"
                     }
-                    if (status != 'SUCCESS') error "Quality Gate SonarQube échoué : ${status}"
+
+                    if (status != 'SUCCESS') {
+                        error "Quality Gate SonarQube échoué : ${status}"
+                    }
                 }
             }
         }
@@ -103,15 +121,15 @@ pipeline {
         stage('Security Scan') {
             steps {
                 sh """
-                    docker run --rm \
-                    -v /var/run/docker.sock:/var/run/docker.sock \
-                    -v trivy-cache:/root/.cache/trivy \
-                    -v ${WORKSPACE}/.trivyignore:/.trivyignore \
-                    aquasec/trivy:latest image \
-                    --severity HIGH,CRITICAL \
-                    --exit-code 1 \
-                    --ignorefile /.trivyignore \
-                    --format table \
+                    docker run --rm \\
+                    -v /var/run/docker.sock:/var/run/docker.sock \\
+                    -v trivy-cache:/root/.cache/trivy \\
+                    -v ${WORKSPACE}/.trivyignore:/.trivyignore \\
+                    aquasec/trivy:latest image \\
+                    --severity HIGH,CRITICAL \\
+                    --exit-code 1 \\
+                    --ignorefile /.trivyignore \\
+                    --format table \\
                     "${IMAGE_NAME}:${IMAGE_TAG}"
                 """
             }
