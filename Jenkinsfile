@@ -61,23 +61,17 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube (Détection dynamique du nom)
+        // Stage 4: Analyse Statique avec SonarQube
         stage('SonarQube Analysis') {
-            environment {
-                REG_TOKEN = credentials('sonar-token')
-            }
             steps {
-                script {
-                    // Détecte automatiquement l'unique nom d'installation configuré dans Jenkins
-                    def sonarInsts = jenkins.model.Jenkins.instance.getDescriptorByType(hudson.plugins.sonar.SonarGlobalConfiguration.class).installations
-                    def sonarName = sonarInsts && sonarInsts.length > 0 ? sonarInsts[0].name : 'sonarqube'
-                    echo "Nom de l'installation SonarQube détecté automatiquement : ${sonarName}"
-                    
-                    withSonarQubeEnv(sonarName) {
+                // Utilisation du nom exact validé par votre capture d'écran
+                withSonarQubeEnv('sonarqube') {
+                    // On demande à Jenkins d'injecter directement la String du token secret
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh """
                             docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
-                            -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
-                            -e SONAR_TOKEN="\$REG_TOKEN" \
+                            -e SONAR_HOST_URL="http://sonarqube:9000" \
+                            -e SONAR_TOKEN="\$SONAR_TOKEN" \
                             sonarsource/sonar-scanner-cli:latest \
                             sonar-scanner \
                             -Dsonar.projectKey=sentiment-ai \
