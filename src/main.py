@@ -1,3 +1,4 @@
+# Fichier principal de l'API Sentiment-AI (Commentaire de TP)
 from fastapi import FastAPI
 from src.schemas import PredictionRequest, PredictionResponse
 from src.model import SentimentModel
@@ -9,15 +10,11 @@ app = FastAPI(title="SentimentAI API")
 model = SentimentModel()
 
 # Endpoint de Healthcheck
-
-
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
 # Endpoint de prédiction
-
-
 @app.post("/predict", response_model=PredictionResponse)
 def predict_sentiment(payload: PredictionRequest):
     # Appeler la méthode predict du modèle avec le texte validé par Pydantic

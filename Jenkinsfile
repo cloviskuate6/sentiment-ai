@@ -9,10 +9,15 @@ pipeline {
     }
 
     stages {
-        // Stage 1: Récupération du code
+        // Stage 1: Récupération du code et injection forcée de la branche
         stage('Checkout') {
             steps {
-                checkout scm
+                script {
+                    def scmVars = checkout scm
+                    if (!env.BRANCH_NAME && scmVars.GIT_BRANCH) {
+                        env.BRANCH_NAME = scmVars.GIT_BRANCH.replace('origin/', '')
+                    }
+                }
                 echo "Branche : ${env.BRANCH_NAME}"
                 echo "Commit  : ${env.GIT_COMMIT}"
                 sh 'git log --oneline -5'
@@ -53,7 +58,7 @@ pipeline {
             }
         }
 
-        // Stage 4: Publication de l'image (Uniquement sur la branche main)
+        // Stage 4: Publication de l'image (Exécuté car Branche vaudra 'main')
         stage('Push') {
             when {
                 branch 'main'
@@ -75,7 +80,6 @@ pipeline {
         }
     }
 
-    // Actions globales à la fin du pipeline
     post {
         always {
             sh 'docker compose down -v 2>/dev/null || true'
