@@ -124,11 +124,11 @@ pipeline {
                     docker run --rm \\
                     -v /var/run/docker.sock:/var/run/docker.sock \\
                     -v trivy-cache:/root/.cache/trivy \\
-                    -v ${WORKSPACE}/.trivyignore:/.trivyignore \\
+                    -v ${WORKSPACE}:/workspace \\
                     aquasec/trivy:latest image \\
                     --severity HIGH,CRITICAL \\
                     --exit-code 1 \\
-                    --ignorefile /.trivyignore \\
+                    --ignorefile /workspace/.trivyignore \\
                     --format table \\
                     "${IMAGE_NAME}:${IMAGE_TAG}"
                 """
