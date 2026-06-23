@@ -31,8 +31,6 @@ pipeline {
             steps {
                 sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
-                
-                // Nettoyage préventif des caches pour préserver la RAM
                 sh 'docker system prune -f || true'
                 
                 sh """
@@ -66,10 +64,11 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube (Authentification par Login)
+        // Stage 4: Analyse Statique avec SonarQube
         stage('SonarQube Analysis') {
             environment {
-                REG_TOKEN = credentials('sonar-token')
+                // Utilisation du Secret Text corrigé dans Jenkins
+                SONAR_AUTH_TOKEN = credentials('sonar-token')
             }
             steps {
                 sh """
@@ -77,8 +76,7 @@ pipeline {
                     sonarsource/sonar-scanner-cli:latest \
                     sonar-scanner \
                     -Dsonar.host.url="http://sonarqube:9000" \
-                    -Dsonar.login="\$REG_TOKEN" \
-                    -Dsonar.password="" \
+                    -Dsonar.token="\$SONAR_AUTH_TOKEN" \
                     -Dsonar.projectKey=sentiment-ai \
                     -Dsonar.projectName=SentimentAI \
                     -Dsonar.projectBaseDir="\$WORKSPACE" \
