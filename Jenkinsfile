@@ -30,12 +30,12 @@ pipeline {
                 // 2. Build de l'image
                 sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 
-                // 3. Exécution avec --rm pour supprimer le conteneur automatiquement
-                // On utilise une variable pour capturer le code de retour
+                // 3. Exécution avec montage de volume pour récupérer le rapport sans 'docker cp'
                 sh """
                     set +e
                     docker run \
                     --rm \
+                    -v "${WORKSPACE}:/app/workspace" \
                     -e CI=true \
                     --memory="2g" \
                     --memory-swap="3g" \
@@ -43,18 +43,11 @@ pipeline {
                     ${IMAGE_NAME}:${IMAGE_TAG} \
                     pytest tests/ \
                     --cov=src \
-                    --cov-report=xml:/tmp/coverage.xml \
+                    --cov-report=xml:/app/workspace/coverage.xml \
                     --cov-fail-under=70
                     echo \$? > test_exit_code.txt
                     set -e
                 """
-                
-                // 4. Extraction du rapport AVANT la suppression (le conteneur est supprimé par --rm, 
-                // mais le fichier est déjà généré dans le workspace grâce au volume/cp)
-                // Note: Si le conteneur est supprimé par --rm, on copie le fichier directement 
-                // si possible via un volume ou on change la stratégie. 
-                // Ici, on tente la copie juste après le run.
-                sh 'docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true'
                 
                 script {
                     def exitCode = readFile('test_exit_code.txt').trim()
