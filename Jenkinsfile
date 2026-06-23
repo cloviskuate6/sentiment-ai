@@ -61,13 +61,13 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube (Nom du serveur synchronisé avec majuscule)
+        // Stage 4: Analyse Statique avec SonarQube (Sélection automatique)
         stage('SonarQube Analysis') {
             environment {
                 REG_TOKEN = credentials('sonar-token')
             }
             steps {
-                withSonarQubeEnv('SonarQube') {
+                withSonarQubeEnv() {
                     sh """
                         docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
                         -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
