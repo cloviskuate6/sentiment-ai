@@ -26,10 +26,12 @@ pipeline {
             }
         }
 
-        // Stage 3: Build & Test avec génération de couverture de code (Optimisé Mémoire)
+        // Stage 3: Build & Test avec génération de couverture de code
         stage('Build & Test') {
             steps {
-                sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
+                // Ajout de --no-cache pour forcer l'application des mises à jour de sécurité (apt upgrade)
+                sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
+                
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 sh 'docker system prune -f || true'
                 
@@ -89,7 +91,7 @@ pipeline {
             }
         }
 
-        // Stage 5: Attente du feu vert SonarQube (Quality Gate)
+        // Stage 5: Attente du feu vert SonarQube
         stage('Quality Gate') {
             steps {
                 echo "Envoi des données à SonarQube terminé. Progression de l'analyse..."
@@ -97,7 +99,7 @@ pipeline {
             }
         }
 
-        // Stage 6: Scan de sécurité opérationnel des vulnérabilités (Trivy - Strict)
+        // Stage 6: Scan de sécurité opérationnel (Trivy)
         stage('Security Scan') {
             steps {
                 sh """
@@ -114,7 +116,6 @@ pipeline {
             post {
                 failure {
                     echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
-                    echo 'Corrigez les dépendances avant de déployer.'
                 }
             }
         }
@@ -128,7 +129,7 @@ pipeline {
             }
         }
 
-        // Stage 8: Déploiement automatisé en Staging
+        // Stage 8: Déploiement automatisé
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {

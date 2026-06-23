@@ -1,0 +1,41 @@
+[33mcommit e21ba7dac44f71280189ab4b887254c9f9f7e0e0[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: kuate choutedjem clovis <cloviskuate6@gmail.com>
+Date:   Tue Jun 23 12:15:54 2026 +0200
+
+    ci: fix docker deployment using native docker on port 8085
+
+[1mdiff --git a/Jenkinsfile b/Jenkinsfile[m
+[1mindex 4b3fcff..16f8c63 100644[m
+[1m--- a/Jenkinsfile[m
+[1m+++ b/Jenkinsfile[m
+[36m@@ -27,11 +27,15 @@[m [mpipeline {[m
+ [m
+         stage('Build & Test') {[m
+             steps {[m
+[31m-                // Version moderne avec guillemets doubles[m
+[31m-                sh "docker compose up -d --build"[m
+[31m-                // Attendre que le conteneur soit prêt et tester le healthcheck[m
+[32m+[m[32m                // 1. Build de l'image via Docker classique (évite l'erreur d'interprétation compose)[m
+[32m+[m[32m                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."[m
+[32m+[m[41m                [m
+[32m+[m[32m                // 2. Lancement sur le port 8085 (libre) vers le port d'écoute de votre app (8000 ou 8081)[m
+[32m+[m[32m                sh "docker run -d --name sentiment-ai-container -p 8085:8000 ${IMAGE_NAME}:${IMAGE_TAG} || docker run -d --name sentiment-ai-container -p 8085:8081 ${IMAGE_NAME}:${IMAGE_TAG}"[m
+[32m+[m[41m                [m
+[32m+[m[32m                // 3. Attente et vérification du Healthcheck sur le port 8085[m
+                 sh "sleep 5"[m
+[31m-                sh "curl -f http://localhost:8080/health || curl -f http://localhost:8081/health"[m
+[32m+[m[32m                sh "curl -f http://localhost:8085/health"[m
+             }[m
+         }[m
+ [m
+[36m@@ -48,8 +52,8 @@[m [mpipeline {[m
+ [m
+     post {[m
+         always {[m
+[31m-            // Nettoyage avec la bonne commande officielle[m
+[31m-            sh "docker compose down -v"[m
+[32m+[m[32m            // Nettoyage impératif du conteneur créé manuellement pour le test[m
+[32m+[m[32m            sh "docker rm -f sentiment-ai-container || true"[m
+         }[m
+         success {[m
+             echo 'Pipeline réussi avec succès !'[m
