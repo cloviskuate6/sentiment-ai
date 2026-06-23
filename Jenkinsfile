@@ -27,11 +27,11 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                // Modifié ici : docker-compose à la place de docker compose
-                sh 'docker-compose up -d --build'
+                // Version moderne avec guillemets doubles
+                sh "docker compose up -d --build"
                 // Attendre que le conteneur soit prêt et tester le healthcheck
-                sh 'sleep 5'
-                sh 'curl -f http://localhost:8080/health || curl -f http://localhost:8081/health'
+                sh "sleep 5"
+                sh "curl -f http://localhost:8080/health || curl -f http://localhost:8081/health"
             }
         }
 
@@ -48,8 +48,8 @@ pipeline {
 
     post {
         always {
-            // Modifié ici aussi pour le nettoyage
-            sh 'docker-compose down -v'
+            // Nettoyage avec la bonne commande officielle
+            sh "docker compose down -v"
         }
         success {
             echo 'Pipeline réussi avec succès !'
