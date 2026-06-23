@@ -32,12 +32,11 @@ pipeline {
                 sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 
-                // Nettoyage préventif des caches et conteneurs orphelins pour libérer de la RAM
+                // Nettoyage préventif des caches pour préserver la RAM
                 sh 'docker system prune -f || true'
                 
                 sh """
                     set +e
-                    # Ajout des limites de mémoire pour empêcher l'arrêt brutal (Code 137)
                     docker run \
                     -e CI=true \
                     --memory="1g" \
@@ -67,7 +66,7 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube (Correction Authentification)
+        // Stage 4: Analyse Statique avec SonarQube (Authentification par Login)
         stage('SonarQube Analysis') {
             environment {
                 REG_TOKEN = credentials('sonar-token')
@@ -78,7 +77,8 @@ pipeline {
                     sonarsource/sonar-scanner-cli:latest \
                     sonar-scanner \
                     -Dsonar.host.url="http://sonarqube:9000" \
-                    -Dsonar.token="\$REG_TOKEN" \
+                    -Dsonar.login="\$REG_TOKEN" \
+                    -Dsonar.password="" \
                     -Dsonar.projectKey=sentiment-ai \
                     -Dsonar.projectName=SentimentAI \
                     -Dsonar.projectBaseDir="\$WORKSPACE" \
