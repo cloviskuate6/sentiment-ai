@@ -32,7 +32,6 @@ pipeline {
                 sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 
-                // Exécution optimisée pour éviter l'erreur de mémoire 137
                 sh """
                     set +e
                     docker run \
@@ -47,11 +46,9 @@ pipeline {
                     set -e
                 """
                 
-                // Copie du rapport dans le Workspace Jenkins pour SonarQube
                 sh 'docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 
-                // Validation du code de sortie des tests
                 script {
                     def exitCode = readFile('test_exit_code.txt').trim()
                     if (exitCode != '0') {
@@ -64,13 +61,13 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube
+        // Stage 4: Analyse Statique avec SonarQube (Nom du serveur synchronisé avec majuscule)
         stage('SonarQube Analysis') {
             environment {
                 REG_TOKEN = credentials('sonar-token')
             }
             steps {
-                withSonarQubeEnv('sonarqube') {
+                withSonarQubeEnv('SonarQube') {
                     sh """
                         docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
                         -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
@@ -139,7 +136,6 @@ pipeline {
 
     post {
         always {
-            // Nettoyage final des fichiers temporaires
             sh "rm -f test_exit_code.txt || true"
         }
         success {
