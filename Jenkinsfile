@@ -18,7 +18,13 @@ pipeline {
 
         stage('Lint') {
             steps {
-                sh 'find src/ -name "*.py" | xargs -I{} sh -c \'[ -n "$(tail -c1 {})" ] && echo "" >> {}\''
+                sh '''
+                    for f in $(find src/ -name "*.py"); do
+                        if [ -n "$(tail -c1 "$f")" ]; then
+                            echo "" >> "$f"
+                        fi
+                    done
+                '''
                 sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"'
             }
         }
