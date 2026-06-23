@@ -27,7 +27,8 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                sh 'docker compose up -d --build'
+                // Modifié ici : docker-compose à la place de docker compose
+                sh 'docker-compose up -d --build'
                 // Attendre que le conteneur soit prêt et tester le healthcheck
                 sh 'sleep 5'
                 sh 'curl -f http://localhost:8080/health || curl -f http://localhost:8081/health'
@@ -47,7 +48,8 @@ pipeline {
 
     post {
         always {
-            sh 'docker compose down -v'
+            // Modifié ici aussi pour le nettoyage
+            sh 'docker-compose down -v'
         }
         success {
             echo 'Pipeline réussi avec succès !'
