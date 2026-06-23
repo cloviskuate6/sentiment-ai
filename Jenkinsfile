@@ -33,8 +33,9 @@ pipeline {
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 
                 // Exécution des tests et extraction du fichier XML de couverture
-                set +e
+                // Les instructions de gestion des erreurs (+e / -e) sont incluses proprement dans l'interpréteur
                 sh """
+                    set +e
                     docker run \
                     -e CI=true \
                     --name test-runner \
@@ -45,8 +46,8 @@ pipeline {
                     --cov-report=term-missing \
                     --cov-fail-under=70
                     echo \$? > test_exit_code.txt
+                    set -e
                 """
-                set -e
                 
                 // Copie du rapport dans le Workspace Jenkins pour SonarQube
                 sh 'docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true'
