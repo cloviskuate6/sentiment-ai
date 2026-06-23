@@ -8,7 +8,6 @@ pipeline {
     }
 
     stages {
-        // Stage 1: Récupération du code
         stage('Checkout') {
             steps {
                 script {
@@ -19,19 +18,17 @@ pipeline {
             }
         }
 
-        // Stage 2: Analyse de style (Lint)
         stage('Lint') {
             steps {
                 sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100 || true"'
             }
         }
 
-        // Stage 3: Build & Test avec génération de couverture de code
         stage('Build & Test') {
             steps {
                 sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
-                
+
                 sh """
                     set +e
                     docker run \
@@ -45,10 +42,10 @@ pipeline {
                     echo \$? > test_exit_code.txt
                     set -e
                 """
-                
+
                 sh 'docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
-                
+
                 script {
                     def exitCode = readFile('test_exit_code.txt').trim()
                     if (exitCode != '0') {
@@ -61,13 +58,11 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube
         stage('SonarQube Analysis') {
             environment {
                 REG_TOKEN = credentials('sonar-token')
             }
             steps {
-                // Utilisation du nom exact 'sonarqube' validé par vos écrans de configuration
                 withSonarQubeEnv('sonarqube') {
                     sh """
                         docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
@@ -88,7 +83,6 @@ pipeline {
             }
         }
 
-        // Stage 5: Attente du feu vert SonarQube (Quality Gate)
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -97,7 +91,6 @@ pipeline {
             }
         }
 
-        // Stage 6: Scan de sécurité des vulnérabilités avec Trivy
         stage('Security Scan') {
             steps {
                 sh """
@@ -113,7 +106,6 @@ pipeline {
             }
         }
 
-        // Stage 7: Push vers le registre local
         stage('Push') {
             when { branch 'main' }
             steps {
@@ -122,7 +114,6 @@ pipeline {
             }
         }
 
-        // Stage 8: Déploiement automatisé en Staging
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {
