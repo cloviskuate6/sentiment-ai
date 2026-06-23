@@ -26,12 +26,11 @@ pipeline {
             }
         }
 
-        // Stage 3: Build & Test avec génération de couverture de code
+        // Stage 3: Build & Test (Mémoire augmentée à 2g pour éviter l'erreur 137)
         stage('Build & Test') {
             steps {
-                // Ajout de --no-cache pour forcer l'application des mises à jour de sécurité (apt upgrade)
+                // Forçage du build sans cache pour appliquer les correctifs de sécurité
                 sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
-                
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 sh 'docker system prune -f || true'
                 
@@ -39,8 +38,8 @@ pipeline {
                     set +e
                     docker run \
                     -e CI=true \
-                    --memory="1g" \
-                    --memory-swap="2g" \
+                    --memory="2g" \
+                    --memory-swap="3g" \
                     --name test-runner \
                     ${IMAGE_NAME}:${IMAGE_TAG} \
                     pytest tests/ \
@@ -99,7 +98,7 @@ pipeline {
             }
         }
 
-        // Stage 6: Scan de sécurité opérationnel (Trivy)
+        // Stage 6: Scan de sécurité opérationnel (Trivy - Strict)
         stage('Security Scan') {
             steps {
                 sh """
@@ -116,6 +115,7 @@ pipeline {
             post {
                 failure {
                     echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
+                    echo 'Corrigez les dépendances avant de déployer.'
                 }
             }
         }
@@ -129,7 +129,7 @@ pipeline {
             }
         }
 
-        // Stage 8: Déploiement automatisé
+        // Stage 8: Déploiement automatisé en Staging
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {
@@ -153,4 +153,3 @@ pipeline {
             echo 'Le pipeline a échoué.'
         }
     }
-}
