@@ -120,18 +120,19 @@ pipeline {
 
         stage('Security Scan') {
             steps {
-                sh """
-                    docker run --rm \\
-                    -v /var/run/docker.sock:/var/run/docker.sock \\
-                    -v trivy-cache:/root/.cache/trivy \\
-                    -v ${WORKSPACE}:/workspace \\
-                    aquasec/trivy:latest image \\
-                    --severity HIGH,CRITICAL \\
-                    --exit-code 1 \\
-                    --ignorefile /workspace/.trivyignore \\
-                    --format table \\
-                    "${IMAGE_NAME}:${IMAGE_TAG}"
-                """
+                sh '''
+                    docker run --rm \
+                    --volumes-from jenkins \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v trivy-cache:/root/.cache/trivy \
+                    -w "$WORKSPACE" \
+                    aquasec/trivy:latest image \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 1 \
+                    --ignorefile "$WORKSPACE/.trivyignore" \
+                    --format table \
+                    sentiment-ai:latest
+                '''
             }
         }
 
