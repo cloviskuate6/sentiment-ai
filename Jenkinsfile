@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                script { echo "Branche : ${env.BRANCH_NAME}" }
+                script { echo "Branche : ${env.GIT_BRANCH ?: 'inconnue'}" }
                 checkout scm
                 sh 'git log --oneline -5'
             }
@@ -18,9 +18,7 @@ pipeline {
 
         stage('Lint') {
             steps {
-                // Correction automatique du formatage pour éviter W292
-                sh 'find src/ -name "*.py" -exec sed -i -e \'$a\\\' {} \\;'
-                // Lancement du lint
+                sh 'find src/ -name "*.py" | xargs -I{} sh -c \'[ -n "$(tail -c1 {})" ] && echo "" >> {}\''
                 sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"'
             }
         }
@@ -29,7 +27,7 @@ pipeline {
             steps {
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
-                
+
                 sh """
                     set +e
                     docker run --rm \
@@ -42,7 +40,7 @@ pipeline {
                     echo \$? > test_exit_code.txt
                     set -e
                 """
-                
+
                 script {
                     if (readFile('test_exit_code.txt').trim() != '0') {
                         error "Tests échoués ou couverture < 70%."
@@ -73,12 +71,23 @@ pipeline {
             steps {
                 script {
                     sleep 10
-                    def taskId = sh(script: "grep 'ceTaskId=' \$WORKSPACE/report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
+                    def taskId = sh(
+                        script: "grep 'ceTaskId=' \$WORKSPACE/report-task.txt | cut -d'=' -f2",
+                        returnStdout: true
+                    ).trim()
+
                     def status = ''
                     def retries = 10
                     while (retries-- > 0 && status != 'SUCCESS' && status != 'FAILED') {
                         sleep 5
-                        status = sh(script: "curl -s -u \$SONAR_AUTH_TOKEN: http://sonarqube:9000/api/ce/task?id=${taskId} | python3 -c \"import sys,json; print(json.load(sys.stdin)['task']['status'])\"", returnStdout: true).trim()
+                        status = sh(
+                            script: """
+                                curl -s -H "Authorization: Bearer \$SONAR_AUTH_TOKEN" \
+                                http://sonarqube:9000/api/ce/task?id=${taskId} \
+                                | python3 -c "import sys,json; print(json.load(sys.stdin)['task']['status'])"
+                            """,
+                            returnStdout: true
+                        ).trim()
                     }
                     if (status != 'SUCCESS') error "Quality Gate SonarQube échoué : ${status}"
                 }
@@ -114,7 +123,7 @@ pipeline {
             when { branch 'main' }
             steps {
                 sh "docker rm -f sentiment-ai-staging || true"
-                sh "docker run -d --name sentiment-ai-staging -p 8001:8085 ${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "docker run -d --name sentiment-ai-staging -p 8001:8000 ${IMAGE_NAME}:${IMAGE_TAG}"
             }
         }
     }
@@ -122,8 +131,6 @@ pipeline {
     post {
         always { sh "rm -f test_exit_code.txt || true" }
         success { echo 'Pipeline terminé avec succès !' }
-        failure { 
-            echo 'Le pipeline a échoué. Vérifiez les logs.'
-        }
+        failure { echo 'Le pipeline a échoué. Vérifiez les logs.' }
     }
 }

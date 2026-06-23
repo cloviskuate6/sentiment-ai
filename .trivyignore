@@ -1,0 +1,13 @@
+# starlette - pas de version FastAPI-compatible sans ces CVEs
+CVE-2024-47874
+
+# OS Debian - pas de correctif disponible
+CVE-2023-45853
+CVE-2025-69720
+CVE-2026-11822
+CVE-2026-11824
+CVE-2026-42496
+CVE-2026-8376
+CVE-2026-42497
+CVE-2026-48962
+CVE-2026-9538
