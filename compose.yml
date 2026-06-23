@@ -5,7 +5,7 @@ services:
     build: .
     container_name: sentiment-staging
     ports:
-      - "8085:8085"  # L'hôte écoute sur 8085 et redirige vers le conteneur sur 8085
+      - "8001:8085"  # L'hôte écoute sur 8085 et redirige vers le conteneur sur 8085
     environment:
       - ENV=development
     networks:
