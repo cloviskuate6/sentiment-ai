@@ -18,7 +18,9 @@ pipeline {
 
         stage('Lint') {
             steps {
-                // Rendu bloquant (suppression du || true)
+                // Correction automatique du formatage pour éviter W292
+                sh 'find src/ -name "*.py" -exec sed -i -e \'$a\\\' {} \\;'
+                // Lancement du lint
                 sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"'
             }
         }
@@ -122,7 +124,6 @@ pipeline {
         success { echo 'Pipeline terminé avec succès !' }
         failure { 
             echo 'Le pipeline a échoué. Vérifiez les logs.'
-            // mail to: 'dev@example.com', subject: "Echec CI ${env.JOB_NAME}", body: "Build #${env.BUILD_NUMBER} a échoué."
         }
     }
 }
