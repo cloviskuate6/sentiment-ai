@@ -67,7 +67,6 @@ pipeline {
         // Stage 4: Analyse Statique avec SonarQube
         stage('SonarQube Analysis') {
             environment {
-                // Utilisation du Secret Text corrigé dans Jenkins
                 SONAR_AUTH_TOKEN = credentials('sonar-token')
             }
             steps {
@@ -76,7 +75,7 @@ pipeline {
                     sonarsource/sonar-scanner-cli:latest \
                     sonar-scanner \
                     -Dsonar.host.url="http://sonarqube:9000" \
-                    -Dsonar.token="\$SONAR_AUTH_TOKEN" \
+                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \
                     -Dsonar.projectKey=sentiment-ai \
                     -Dsonar.projectName=SentimentAI \
                     -Dsonar.projectBaseDir="\$WORKSPACE" \
