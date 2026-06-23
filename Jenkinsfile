@@ -32,18 +32,16 @@ pipeline {
                 sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 
-                // Exécution des tests et extraction du fichier XML de couverture
-                // Les instructions de gestion des erreurs (+e / -e) sont incluses proprement dans l'interpréteur
+                // Exécution optimisée pour éviter l'erreur de mémoire 137
                 sh """
                     set +e
                     docker run \
                     -e CI=true \
                     --name test-runner \
                     ${IMAGE_NAME}:${IMAGE_TAG} \
-                    pytest tests/ -v \
+                    pytest tests/ \
                     --cov=src \
                     --cov-report=xml:/tmp/coverage.xml \
-                    --cov-report=term-missing \
                     --cov-fail-under=70
                     echo \$? > test_exit_code.txt
                     set -e
