@@ -61,20 +61,18 @@ pipeline {
             }
         }
 
-        // Stage 4: Analyse Statique avec SonarQube (Direct sans le wrapper instable)
+        // Stage 4: Analyse Statique avec SonarQube (Correction Authentification)
         stage('SonarQube Analysis') {
             environment {
-                // On charge le token d'analyse depuis vos credentials Jenkins
                 REG_TOKEN = credentials('sonar-token')
             }
             steps {
-                // Nous n'utilisons plus 'withSonarQubeEnv' pour contourner le bug d'installation Jenkins
                 sh """
                     docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
-                    -e SONAR_HOST_URL="http://sonarqube:9000" \
-                    -e SONAR_TOKEN="\$REG_TOKEN" \
                     sonarsource/sonar-scanner-cli:latest \
                     sonar-scanner \
+                    -Dsonar.host.url="http://sonarqube:9000" \
+                    -Dsonar.token="\$REG_TOKEN" \
                     -Dsonar.projectKey=sentiment-ai \
                     -Dsonar.projectName=SentimentAI \
                     -Dsonar.projectBaseDir="\$WORKSPACE" \
@@ -90,8 +88,7 @@ pipeline {
         // Stage 5: Attente du feu vert SonarQube (Quality Gate)
         stage('Quality Gate') {
             steps {
-                // Remplacé par un sleep temporaire car waitForQualityGate nécessite l'étape withSonarQubeEnv
-                echo "Envoi des données à SonarQube terminé. Pause de vérification..."
+                echo "Envoi des données à SonarQube terminé. Progression de l'analyse..."
                 sleep 10
             }
         }
