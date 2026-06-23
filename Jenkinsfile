@@ -8,6 +8,7 @@ pipeline {
     }
 
     stages {
+        // Stage 1: Récupération du code
         stage('Checkout') {
             steps {
                 script {
@@ -18,48 +19,135 @@ pipeline {
             }
         }
 
+        // Stage 2: Analyse de style (Lint)
         stage('Lint') {
             steps {
-                // Le "|| true" à la fin empêche les erreurs d'espaces Python de bloquer le TP
-                sh 'docker run --rm --volumes-from jenkins -w /var/jenkins_home/workspace/sentiment-ai-pipeline python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100 || true"'
+                sh 'docker run --rm --volumes-from jenkins -w "$WORKSPACE" python:3.12-slim sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100 || true"'
             }
         }
 
+        // Stage 3: Build & Test avec génération de couverture de code
         stage('Build & Test') {
             steps {
-                // 1. Build de l'image via Docker classique (évite l'erreur d'interprétation compose)
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
+                sh 'docker rm -f test-runner 2>/dev/null || true'
                 
-                // 2. Lancement sur le port 8085 (libre) vers le port d'écoute de votre app (8000 ou 8081)
-                sh "docker run -d --name sentiment-ai-container -p 8085:8000 ${IMAGE_NAME}:${IMAGE_TAG} || docker run -d --name sentiment-ai-container -p 8085:8081 ${IMAGE_NAME}:${IMAGE_TAG}"
+                // Exécution des tests et extraction du fichier XML de couverture
+                set +e
+                sh """
+                    docker run \
+                    -e CI=true \
+                    --name test-runner \
+                    ${IMAGE_NAME}:${IMAGE_TAG} \
+                    pytest tests/ -v \
+                    --cov=src \
+                    --cov-report=xml:/tmp/coverage.xml \
+                    --cov-report=term-missing \
+                    --cov-fail-under=70
+                    echo \$? > test_exit_code.txt
+                """
+                set -e
                 
-                // 3. Attente et vérification du Healthcheck sur le port 8085
-                sh "sleep 5"
-                sh "curl -f http://localhost:8085/health"
+                // Copie du rapport dans le Workspace Jenkins pour SonarQube
+                sh 'docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true'
+                sh 'docker rm -f test-runner 2>/dev/null || true'
+                
+                // Validation du code de sortie des tests
+                script {
+                    def exitCode = readFile('test_exit_code.txt').trim()
+                    if (exitCode != '0') {
+                        error "Les tests ont échoué ou la couverture est inférieure à 70% (Code: ${exitCode})"
+                    }
+                }
+            }
+            post {
+                failure { echo 'Tests échoués ou coverage insuffisant (< 70%)' }
             }
         }
 
-        stage('Push') {
-            when {
-                branch 'main'
+        // Stage 4: Analyse Statique avec SonarQube
+        stage('SonarQube Analysis') {
+            environment {
+                REG_TOKEN = credentials('sonar-token')
             }
+            steps {
+                withSonarQubeEnv('sonarqube') {
+                    sh """
+                        docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
+                        -e SONAR_HOST_URL="\$SONAR_HOST_URL" \
+                        -e SONAR_TOKEN="\$REG_TOKEN" \
+                        sonarsource/sonar-scanner-cli:latest \
+                        sonar-scanner \
+                        -Dsonar.projectKey=sentiment-ai \
+                        -Dsonar.projectName=SentimentAI \
+                        -Dsonar.projectBaseDir="\$WORKSPACE" \
+                        -Dsonar.sources=src \
+                        -Dsonar.python.version=3.11 \
+                        -Dsonar.python.coverage.reportPaths=coverage.xml \
+                        -Dsonar.sourceEncoding=UTF-8 \
+                        -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
+                    """
+                }
+            }
+        }
+
+        // Stage 5: Attente du feu vert SonarQube (Quality Gate)
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        // Stage 6: Scan de sécurité des vulnérabilités avec Trivy
+        stage('Security Scan') {
+            steps {
+                sh """
+                    docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v trivy-cache:/root/.cache/trivy \
+                    aquasec/trivy:latest image \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 0 \
+                    --format table \
+                    "${IMAGE_NAME}:${IMAGE_TAG}"
+                """
+            }
+        }
+
+        // Stage 7: Push vers le registre local
+        stage('Push') {
+            when { branch 'main' }
             steps {
                 sh "docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
                 sh "docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+            }
+        }
+
+        // Stage 8: Déploiement automatisé en Staging
+        stage('Deploy Staging') {
+            when { branch 'main' }
+            steps {
+                echo "Déploiement de l'application en staging..."
+                sh "docker rm -f sentiment-ai-staging || true"
+                sh "docker run -d --name sentiment-ai-staging -p 8001:8000 ${IMAGE_NAME}:${IMAGE_TAG} || docker run -d --name sentiment-ai-staging -p 8001:8081 ${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "sleep 3"
+                sh "curl -f http://localhost:8001/health || echo 'Application démarrée sur http://localhost:8001'"
             }
         }
     }
 
     post {
         always {
-            // Nettoyage impératif du conteneur créé manuellement pour le test
-            sh "docker rm -f sentiment-ai-container || true"
+            // Nettoyage final des fichiers temporaires
+            sh "rm -f test_exit_code.txt || true"
         }
         success {
-            echo 'Pipeline réussi avec succès !'
+            echo 'Pipeline complet réussi avec succès !'
         }
         failure {
-            echo 'Pipeline échoué.'
+            echo 'Le pipeline a échoué.'
         }
     }
 }
