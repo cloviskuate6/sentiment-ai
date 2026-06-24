@@ -29,24 +29,32 @@ pipeline {
             }
         }
 
+        stage('IaC Validate') {
+            steps {
+                dir('infra') {
+                    sh 'terraform init -backend=false -input=false'
+                    sh 'terraform fmt -check'
+                    sh 'terraform validate'
+                }
+            }
+        }
+
         stage('Build & Test') {
             steps {
                 sh 'docker rm -f test-runner 2>/dev/null || true'
                 sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
-
                 sh """
                     set +e
-                    docker run --rm \\
-                    -v "${WORKSPACE}:/app/workspace" \\
-                    -e CI=true \\
-                    --memory="2g" --memory-swap="3g" \\
-                    --name test-runner \\
-                    ${IMAGE_NAME}:${IMAGE_TAG} \\
+                    docker run --rm \
+                    -v "${WORKSPACE}:/app/workspace" \
+                    -e CI=true \
+                    --memory="2g" --memory-swap="3g" \
+                    --name test-runner \
+                    ${IMAGE_NAME}:${IMAGE_TAG} \
                     pytest tests/ --cov=src --cov-report=xml:/app/workspace/coverage.xml --cov-fail-under=70
                     echo \$? > test_exit_code.txt
                     set -e
                 """
-
                 script {
                     if (readFile('test_exit_code.txt').trim() != '0') {
                         error "Tests échoués ou couverture < 70%."
@@ -60,14 +68,14 @@ pipeline {
             steps {
                 sh "sed -i 's|/app/src|src|g' ./coverage.xml || true"
                 sh """
-                    docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \\
-                    sonarsource/sonar-scanner-cli:latest sonar-scanner \\
-                    -Dsonar.host.url="http://sonarqube:9000" \\
-                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \\
-                    -Dsonar.projectKey=sentiment-ai \\
-                    -Dsonar.sources=src \\
-                    -Dsonar.python.version=3.11 \\
-                    -Dsonar.python.coverage.reportPaths="coverage.xml" \\
+                    docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
+                    sonarsource/sonar-scanner-cli:latest sonar-scanner \
+                    -Dsonar.host.url="http://sonarqube:9000" \
+                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \
+                    -Dsonar.projectKey=sentiment-ai \
+                    -Dsonar.sources=src \
+                    -Dsonar.python.version=3.11 \
+                    -Dsonar.python.coverage.reportPaths="coverage.xml" \
                     -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
                 """
             }
@@ -78,42 +86,15 @@ pipeline {
             steps {
                 script {
                     sleep 10
-                    def taskId = sh(
-                        script: "grep 'ceTaskId=' ${WORKSPACE}/report-task.txt | cut -d'=' -f2",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "Task ID SonarQube : ${taskId}"
-
+                    def taskId = sh(script: "grep 'ceTaskId=' ${WORKSPACE}/report-task.txt | cut -d'=' -f2", returnStdout: true).trim()
                     def status = 'PENDING'
                     def retries = 15
                     while (retries-- > 0 && status != 'SUCCESS' && status != 'FAILED' && status != 'ERROR') {
                         sleep 5
-                        def response = sh(
-                            script: """
-                                curl -sf \\
-                                --user "\${SONAR_AUTH_TOKEN}:" \\
-                                "http://sonarqube:9000/api/ce/task?id=${taskId}" || echo '{}'
-                            """,
-                            returnStdout: true
-                        ).trim()
-
-                        echo "Réponse SonarQube : ${response}"
-
-                        status = sh(
-                            script: """
-                                echo '${response}' | python3 -c \\
-                                "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('status','PENDING'))"
-                            """,
-                            returnStdout: true
-                        ).trim()
-
-                        echo "Statut Quality Gate : ${status}"
+                        def response = sh(script: "curl -sf --user \"\${SONAR_AUTH_TOKEN}:\" \"http://sonarqube:9000/api/ce/task?id=${taskId}\" || echo '{}'", returnStdout: true).trim()
+                        status = sh(script: "echo '${response}' | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('status','PENDING'))\"", returnStdout: true).trim()
                     }
-
-                    if (status != 'SUCCESS') {
-                        error "Quality Gate SonarQube échoué : ${status}"
-                    }
+                    if (status != 'SUCCESS') { error "Quality Gate SonarQube échoué : ${status}" }
                 }
             }
         }
@@ -121,24 +102,11 @@ pipeline {
         stage('Security Scan') {
             steps {
                 sh '''
-                    docker run --rm \
-                    --volumes-from jenkins \
-                    -v /var/run/docker.sock:/var/run/docker.sock \
-                    -v trivy-cache:/root/.cache/trivy \
-                    -w "$WORKSPACE" \
-                    aquasec/trivy:latest image \
-                    --severity HIGH,CRITICAL \
-                    --exit-code 1 \
-                    --ignorefile "$WORKSPACE/.trivyignore" \
-                    --format table \
-                    sentiment-ai:latest
+                    docker run --rm --volumes-from jenkins -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v trivy-cache:/root/.cache/trivy -w "$WORKSPACE" aquasec/trivy:latest image \
+                    --severity HIGH,CRITICAL --exit-code 1 --ignorefile "$WORKSPACE/.trivyignore" \
+                    --format table sentiment-ai:latest
                 '''
-            }
-            post {
-                failure {
-                    echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
-                    echo 'Corrigez les dépendances avant de déployer.'
-                }
             }
         }
 
@@ -150,14 +118,23 @@ pipeline {
             }
         }
 
+        stage('IaC Apply') {
+            when { branch 'main' }
+            steps {
+                dir('infra') {
+                    sh 'terraform init -input=false'
+                    sh 'terraform apply -auto-approve'
+                }
+            }
+        }
+
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {
-                echo "Déploiement de ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} en staging..."
+                echo "Déploiement en cours..."
                 sh '''
                     docker compose -f docker-compose.yml -p staging down 2>/dev/null || true
                     docker compose -f docker-compose.yml -p staging up -d
-                    echo "Staging disponible sur http://localhost:8001"
                 '''
             }
         }
