@@ -162,4 +162,4 @@ pipeline {
         success { echo 'Pipeline terminé avec succès !' }
         failure { echo 'Le pipeline a échoué. Vérifiez les logs.' }
     }
-}
+} 
