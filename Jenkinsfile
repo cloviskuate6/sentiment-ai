@@ -45,12 +45,12 @@ pipeline {
                 sh 'docker build --no-cache -t ${IMAGE_NAME}:${IMAGE_TAG} .'
                 sh """
                     set +e
-                    docker run --rm \
-                    -v "${WORKSPACE}:/app/workspace" \
-                    -e CI=true \
-                    --memory="2g" --memory-swap="3g" \
-                    --name test-runner \
-                    ${IMAGE_NAME}:${IMAGE_TAG} \
+                    docker run --rm \\
+                    -v "${WORKSPACE}:/app/workspace" \\
+                    -e CI=true \\
+                    --memory="2g" --memory-swap="3g" \\
+                    --name test-runner \\
+                    ${IMAGE_NAME}:${IMAGE_TAG} \\
                     pytest tests/ --cov=src --cov-report=xml:/app/workspace/coverage.xml --cov-fail-under=70
                     echo \$? > test_exit_code.txt
                     set -e
@@ -68,14 +68,14 @@ pipeline {
             steps {
                 sh "sed -i 's|/app/src|src|g' ./coverage.xml || true"
                 sh """
-                    docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \
-                    sonarsource/sonar-scanner-cli:latest sonar-scanner \
-                    -Dsonar.host.url="http://sonarqube:9000" \
-                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \
-                    -Dsonar.projectKey=sentiment-ai \
-                    -Dsonar.sources=src \
-                    -Dsonar.python.version=3.11 \
-                    -Dsonar.python.coverage.reportPaths="coverage.xml" \
+                    docker run --rm --network cicd-network --volumes-from jenkins -w "\$WORKSPACE" \\
+                    sonarsource/sonar-scanner-cli:latest sonar-scanner \\
+                    -Dsonar.host.url="http://sonarqube:9000" \\
+                    -Dsonar.login="\$SONAR_AUTH_TOKEN" \\
+                    -Dsonar.projectKey=sentiment-ai \\
+                    -Dsonar.sources=src \\
+                    -Dsonar.python.version=3.11 \\
+                    -Dsonar.python.coverage.reportPaths="coverage.xml" \\
                     -Dsonar.scanner.metadataFilePath=\$WORKSPACE/report-task.txt
                 """
             }
@@ -108,6 +108,12 @@ pipeline {
                     --format table sentiment-ai:latest
                 '''
             }
+            post {
+                failure {
+                    echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
+                    echo 'Corrigez les dépendances avant de déployer.'
+                }
+            }
         }
 
         stage('Push') {
@@ -136,6 +142,42 @@ pipeline {
                     docker compose -f docker-compose.yml -p staging down 2>/dev/null || true
                     docker compose -f docker-compose.yml -p staging up -d
                 '''
+            }
+        }
+
+        stage('Smoke Test') {
+            when { branch 'main' }
+            steps {
+                sh '''
+                    echo "Attente démarrage (10s)..."
+                    sleep 10
+
+                    # 1. L'app répond
+                    curl -f http://localhost:8001/health || exit 1
+                    echo "/health OK"
+
+                    # 2. Les métriques sont exposées
+                    curl -s http://localhost:8001/metrics | \
+                    grep -q sentiment_predictions_total || exit 1
+                    echo "/metrics OK -- métriques SentimentAI présentes"
+
+                    # 3. Prometheus scrape l'app
+                    sleep 20
+                    curl -s "http://localhost:9090/api/v1/query?query=up{job='sentiment-ai'}" | \
+                    grep -q '"value":.*1' || exit 1
+                    echo "Prometheus scrape sentiment-ai : UP"
+
+                    # 4. Grafana répond
+                    curl -f http://localhost:3000/api/health || exit 1
+                    echo "Grafana OK"
+                '''
+            }
+            post {
+                failure {
+                    sh 'docker logs prometheus || true'
+                    sh 'docker logs sentiment-staging || true'
+                    echo 'Smoke Test KO -- voir logs ci-dessus'
+                }
             }
         }
     }
